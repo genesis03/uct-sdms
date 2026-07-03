@@ -4,6 +4,9 @@ from datetime import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+# [정합성 조항] 페이지 설정은 반드시 스크립트의 최상단에서 최초 1회만 호출되어야 함
+st.set_page_config(layout="wide")
+
 # ==========================================
 # [데이터베이스 레이어] 클라우드 PostgreSQL 연결 및 초기화
 # ==========================================
@@ -135,7 +138,6 @@ try:
 except Exception as e:
     st.error(f"데이터베이스 연결 실패: {str(e)}. Secrets 설정을 확인하십시오.")
 
-st.set_page_config(layout="wide")
 st.title("표준 문서 관리 시스템 (클라우드 환경)")
 
 uploaded_drawing = st.file_uploader("고객사 수령 도면 파일을 업로드하십시오.", type=["pdf", "png", "jpg"])
