@@ -11,13 +11,14 @@ st.set_page_config(layout="wide")
 # [데이터베이스 레이어] 클라우드 PostgreSQL 연결 및 초기화
 # ==========================================
 def get_cloud_db_connection():
-    """Streamlit Secrets에 저장된 자격증명을 통해 클라우드 DB에 연결"""
+    """Streamlit Secrets에 저장된 자격증명을 통해 클라우드 DB에 연결 (타임아웃 설정 추가)"""
     return psycopg2.connect(
         host=st.secrets["db"]["host"],
         database=st.secrets["db"]["database"],
         user=st.secrets["db"]["user"],
         password=st.secrets["db"]["password"],
-        port=st.secrets["db"]["port"]
+        port=st.secrets["db"]["port"],
+        connect_timeout=5  # 5초 내에 연결이 안 되면 무한 대기를 취소하고 에러 반환
     )
 
 def initialize_cloud_database():
@@ -133,39 +134,41 @@ def commit_quality_master_data(metadata, df_characteristics):
 # ==========================================
 # [인터페이스 레이어] 서비스 구동
 # ==========================================
-try:
-    initialize_cloud_database()
-except Exception as e:
-    st.error(f"데이터베이스 연결 실패: {str(e)}. Secrets 설정을 확인하십시오.")
-
 st.title("표준 문서 관리 시스템 (클라우드 환경)")
 
-uploaded_drawing = st.file_uploader("고객사 수령 도면 파일을 업로드하십시오.", type=["pdf", "png", "jpg"])
-
-if uploaded_drawing is not None:
-    dataset = execute_drawing_parsing_pipeline(uploaded_drawing.name)
+try:
+    initialize_cloud_database()
     
-    st.markdown("### 1.1. 도면 표제란 분석 결과 (클라우드 마스터)")
-    h_col1, h_col2, h_col3 = st.columns(3)
-    with h_col1: st.text_input("부품 번호", value=dataset["part_no"], disabled=True)
-    with h_col2: st.text_input("부품 명칭", value=dataset["part_name"], disabled=True)
-    with h_col3: st.text_input("개정 차수", value=dataset["revision"], disabled=True)
+    # 정상 구동 시 UI 표출
+    uploaded_drawing = st.file_uploader("고객사 수령 도면 파일을 업로드하십시오.", type=["pdf", "png", "jpg"])
 
-    st.markdown("### 1.2. 초기 부품표(BOM) 트리 구조")
-    df_bom = pd.DataFrame(dataset["preliminary_bom"])
-    st.table(df_bom)
+    if uploaded_drawing is not None:
+        dataset = execute_drawing_parsing_pipeline(uploaded_drawing.name)
+        
+        st.markdown("### 1.1. 도면 표제란 분석 결과 (클라우드 마스터)")
+        h_col1, h_col2, h_col3 = st.columns(3)
+        with h_col1: st.text_input("부품 번호", value=dataset["part_no"], disabled=True)
+        with h_col2: st.text_input("부품 명칭", value=dataset["part_name"], disabled=True)
+        with h_col3: st.text_input("개정 차수", value=dataset["revision"], disabled=True)
 
-    st.markdown("### 1.3. 품질 특성 편집 및 검증")
-    core_chart_structure = {
-        "특성 코드": [char["char_id"] for char in dataset["quality_characteristics"]],
-        "분류": [char["char_type"] for char in dataset["quality_characteristics"]],
-        "측정 규격": [char["dimension"] for char in dataset["quality_characteristics"]],
-        "상한 공차": [char["upper_tolerance"] for char in dataset["quality_characteristics"]],
-        "하한 공차": [char["lower_tolerance"] for char in dataset["quality_characteristics"]]
-    }
-    edited_df_core = st.data_editor(pd.DataFrame(core_chart_structure), num_rows="dynamic", use_container_width=True)
-    
-    if st.button("데이터 최종 확정 및 Lock (Sign-off)", use_container_width=True):
-        success, message = commit_quality_master_data(dataset, edited_df_core)
-        if success: st.success(message)
-        else: st.error(message)
+        st.markdown("### 1.2. 초기 부품표(BOM) 트리 구조")
+        df_bom = pd.DataFrame(dataset["preliminary_bom"])
+        st.table(df_bom)
+
+        st.markdown("### 1.3. 품질 특성 편집 및 검증")
+        core_chart_structure = {
+            "특성 코드": [char["char_id"] for char in dataset["quality_characteristics"]],
+            "분류": [char["char_type"] for char in dataset["quality_characteristics"]],
+            "측정 규격": [char["dimension"] for char in dataset["quality_characteristics"]],
+            "상한 공차": [char["upper_tolerance"] for char in dataset["quality_characteristics"]],
+            "하한 공차": [char["lower_tolerance"] for char in dataset["quality_characteristics"]]
+        }
+        edited_df_core = st.data_editor(pd.DataFrame(core_chart_structure), num_rows="dynamic", use_container_width=True)
+        
+        if st.button("데이터 최종 확정 및 Lock (Sign-off)", use_container_width=True):
+            success, message = commit_quality_master_data(dataset, edited_df_core)
+            if success: st.success(message)
+            else: st.error(message)
+
+except Exception as e:
+    st.error(f"데이터베이스 연결 실패: {str(e)}. Secrets 설정을 확인하십시오.")
